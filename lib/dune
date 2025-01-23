@@ -1,3 +1,4 @@
 (library
  (name account)
+ (modules account bank)
  )

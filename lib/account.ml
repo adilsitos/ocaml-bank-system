@@ -3,20 +3,27 @@ type currency =
   | Dollar 
   | Euro
 
-type bank = 
-  | BB
-  | SI
-  | CR
+type bankType = 
+  | BancoDoBrasil
+  | BancoSistema
+  | CreditosBank
 
 type currencyAmount = Amount of currency * float
 
-type account = {id: float; name: string; balance: currencyAmount; bank: bank  }
+type account = {
+  id: float;
+   name: string;
+   balance: currencyAmount;
+   bank: bankType;
+   score: int; (*score will  be a random value that will define if an account is reliable or not*)
+  }
 
 let create_account currency bank = {
   id = Random.float 10000.;
   name = string_of_float (Random.float 10000.);
   balance = Amount(currency,Random.float 1000.);
   bank = bank;
+  score = Random.int 10;
 }
 
 (*dollar conversion f*)
@@ -49,16 +56,7 @@ let from_dollar_to_currency amount =
     value /. dollar_conversion
 
 
-(* let convert_balance sender amount currency = begin 
-  let new_balance_converted_to_currency = calculate_amount_to_currency sender.balance currency in
-  let sending_value = calculate_amount_to_currency amount currency in 
-  if sending_value > new_balance_converted_to_currency then 
-    0.
-else 
-  sending_value
-end  *)
-
-let debt_val curr_balance sent_val = 
+let debt_aux curr_balance sent_val = 
   let sent_val_dollar = convert_to_dollar sent_val in 
   let curr_balance_dollar = convert_to_dollar curr_balance in 
     match curr_balance with 
@@ -68,20 +66,86 @@ let debt_val curr_balance sent_val =
     else
       let back_to_real = from_dollar_to_currency (Amount(currency, sent_val_dollar)) in
       Amount(currency, back_to_real)
-  
 
-(* let debt sender amount = 
-  let debt_val = debt_val sender.balance amount in 
-  if debt_val = 0. then 
-    sender else 
-  match sender.balance with
-  | Amount(currency, value) -> 
-    let debt_curr = calculate_amount_to_currency amount currency in 
+let debt sender amount = 
+  match sender with
+  | account -> begin 
+     let debt_res = debt_aux account.balance amount in 
+     match debt_res with
+     | Amount(_, value) -> 
+      if value = 0. then 
+        sender 
+    else 
+      {
+        id = sender.id;
+        name = sender.name;
+        bank = sender.bank;
+        balance = debt_res;
+        score = sender.score;
+      } 
+  end
+
+let credit_aux curr_balance received_val = 
+  let received_val_dollar = convert_to_dollar received_val in 
+  let curr_balance_dollar = convert_to_dollar curr_balance in 
+  let new_amount = received_val_dollar +. curr_balance_dollar in 
+  match curr_balance with
+  | Amount(currency, _) -> 
+    Amount(currency, from_dollar_to_currency (Amount(currency, new_amount)))  
+
+let credit receiver amount = 
+  match receiver with
+  | account -> 
+    let credit_res = credit_aux account.balance amount in 
     {
-      name = sender.name;
-      bank = sender.bank;
-      id = sender.id;
-      balance = Amount(currency, value -. debt_curr)
-    }   *)
+        id = account.id;
+        name = account.name;
+        bank = account.bank;
+        balance = credit_res;
+        score = account.score;
+    } 
 
-let greet name = Printf.sprintf "Hello, %s!" name
+type bank = {
+  name : bankType;
+  id: float;
+}
+
+(*First validation: a transaction needs a bank, so we need to check it*) 
+(*Second validation: create a simple fraud verification *)
+(*Approach to test concurrency (using actor model): Each time a transaction is created, the 
+  bank needs to create three actors: one to handle the transaction operation and check if everything went ok, and two
+    others to maintain the state of the sender and receiver. If new transactions are made to these actors, the model
+  needs to make sure that these new operations are applied 
+*)
+
+type transaction_response = 
+  | Tallowed of account * account
+  | Tdenied
+
+let check_bank account = 
+  match account.bank with
+  | BancoDoBrasil -> true
+  | BancoSistema -> true 
+  | CreditosBank -> true
+
+let allow_operation receiver = 
+  match receiver with
+  | account -> if account.score < 5 then 
+    false else 
+    true
+
+let transaction_operation sender amount receiver = 
+  if not (check_bank sender) && not (check_bank receiver) then 
+    Tdenied
+else if allow_operation receiver = false then 
+    Tdenied
+else 
+  let new_sender = debt sender amount in 
+  (*create  some validation here, this way, it is possible to 
+insert random errors, and test how the concurrent models work*)
+  let new_receiver = credit receiver amount in 
+  Tallowed(new_sender, new_receiver) 
+
+
+
+
